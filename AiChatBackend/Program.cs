@@ -2,6 +2,8 @@ using AiChatBackend.DAL;
 using AiChatBackend.Sevices;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// Add services
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
@@ -10,30 +12,29 @@ builder.Services.AddSingleton<GeminiService>();
 builder.Services.AddSingleton<AuthService>();
 builder.Services.AddScoped<ChatService>();
 
-// Add services to the container.
 builder.Services.AddControllersWithViews();
 
+// ✅ CORS (allow frontend — update later with your real frontend URL)
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowFrontend", policy =>
     {
-        policy.WithOrigins("http://localhost:5180") // your frontend URL
+        policy.AllowAnyOrigin()
               .AllowAnyHeader()
-              .AllowAnyMethod()
-              .AllowCredentials();
+              .AllowAnyMethod();
     });
 });
 
+// ✅ Authentication
 builder.Services.AddAuthentication("cookie")
     .AddCookie("cookie", options =>
     {
         options.Cookie.Name = "auth_cookie";
         options.Cookie.HttpOnly = true;
-        //options.Cookie.SecurePolicy = CookieSecurePolicy.Always;
-        //options.Cookie.SameSite = SameSiteMode.Strict;
-        options.Cookie.SameSite = SameSiteMode.Lax;
-        options.Cookie.SecurePolicy = CookieSecurePolicy.None;
 
+        // 🔐 Secure for production
+        options.Cookie.SameSite = SameSiteMode.Lax;
+        options.Cookie.SecurePolicy = CookieSecurePolicy.Always;
 
         options.LoginPath = "/api/auth/login";
     });
@@ -42,30 +43,33 @@ builder.Services.AddAuthorization();
 
 var app = builder.Build();
 
-// Configure the HTTP request pipeline.
+// ✅ Production config
 if (!app.Environment.IsDevelopment())
 {
     app.UseExceptionHandler("/Home/Error");
-    // The default HSTS value is 30 days. You may want to change this for production scenarios, see https://aka.ms/aspnetcore-hsts.
     app.UseHsts();
-   
 }
 
-app.UseHttpsRedirection();
+// ❌ Disable HTTPS redirection (Render handles HTTPS)
+// app.UseHttpsRedirection();
+
 app.UseRouting();
 
 app.UseCors("AllowFrontend");
 
-// ✅ AUTH ORDER (VERY IMPORTANT)
+// ✅ Auth middleware order (correct)
 app.UseAuthentication();
 app.UseAuthorization();
 
-
-
 app.MapControllers();
 
+// ✅ Swagger only in development
+if (app.Environment.IsDevelopment())
+{
+    app.UseSwagger();
+    app.UseSwaggerUI();
+}
 
-app.UseSwagger();
-app.UseSwaggerUI();
-
-app.Run();
+// 🔥 CRITICAL: Bind to Render port
+var port = Environment.GetEnvironmentVariable("PORT") ?? "8080";
+app.Run($"http://0.0.0.0:{port}");
