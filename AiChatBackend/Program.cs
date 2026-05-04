@@ -14,14 +14,18 @@ builder.Services.AddScoped<ChatService>();
 
 builder.Services.AddControllersWithViews();
 
-// ✅ CORS (allow frontend — update later with your real frontend URL)
+// ✅ CORS
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowFrontend", policy =>
     {
-        policy.AllowAnyOrigin()
-              .AllowAnyHeader()
-              .AllowAnyMethod();
+        policy.WithOrigins(
+            "https://ai-chat-frontend-mocha.vercel.app",
+            "https://ai-chat-frontend-git-main-jayalakshmisandu-glitchs-projects.vercel.app"
+        )
+        .AllowAnyHeader()
+        .AllowAnyMethod()
+        .AllowCredentials();
     });
 });
 
@@ -32,8 +36,8 @@ builder.Services.AddAuthentication("cookie")
         options.Cookie.Name = "auth_cookie";
         options.Cookie.HttpOnly = true;
 
-        // 🔐 Secure for production
-        options.Cookie.SameSite = SameSiteMode.Lax;
+        // 🔥 CRITICAL FIX
+        options.Cookie.SameSite = SameSiteMode.None;
         options.Cookie.SecurePolicy = CookieSecurePolicy.Always;
 
         options.LoginPath = "/api/auth/login";
@@ -50,26 +54,23 @@ if (!app.Environment.IsDevelopment())
     app.UseHsts();
 }
 
-// ❌ Disable HTTPS redirection (Render handles HTTPS)
-// app.UseHttpsRedirection();
-
 app.UseRouting();
 
 app.UseCors("AllowFrontend");
 
-// ✅ Auth middleware order (correct)
+// ✅ Auth order
 app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapControllers();
 
-// ✅ Swagger only in development
+// Swagger (dev only)
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
     app.UseSwaggerUI();
 }
 
-// 🔥 CRITICAL: Bind to Render port
+// Render port binding
 var port = Environment.GetEnvironmentVariable("PORT") ?? "8080";
 app.Run($"http://0.0.0.0:{port}");
