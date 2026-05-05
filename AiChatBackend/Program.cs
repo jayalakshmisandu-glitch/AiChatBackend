@@ -15,15 +15,13 @@ builder.Services.AddScoped<ChatService>();
 
 builder.Services.AddControllersWithViews();
 
-// ✅ CORS (Vercel frontend)
+// ✅ CORS (local + Vercel)
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowFrontend", policy =>
     {
         policy.WithOrigins(
-           
-            "https://ai-chat-frontend-mocha.vercel.app",
-            "https://ai-chat-frontend-git-main-jayalakshmisandu-glitchs-projects.vercel.app"
+            "https://ai-chat-frontend-mocha.vercel.app"
         )
         .AllowAnyHeader()
         .AllowAnyMethod()
@@ -38,9 +36,10 @@ builder.Services.AddAuthentication("cookie")
         options.Cookie.Name = "auth_cookie";
         options.Cookie.HttpOnly = true;
 
-        // 🔥 REQUIRED for cross-domain cookies
+        // 🔥 REQUIRED for cross-site cookies
         options.Cookie.SameSite = SameSiteMode.None;
         options.Cookie.SecurePolicy = CookieSecurePolicy.Always;
+        options.Cookie.IsEssential = true; // ✅ IMPORTANT
 
         options.LoginPath = "/api/auth/login";
 
@@ -50,19 +49,31 @@ builder.Services.AddAuthentication("cookie")
             context.Response.StatusCode = 401;
             return Task.CompletedTask;
         };
+
+        options.Events.OnRedirectToAccessDenied = context =>
+        {
+            context.Response.StatusCode = 403;
+            return Task.CompletedTask;
+        };
     });
 
 builder.Services.AddAuthorization();
 
 var app = builder.Build();
 
-// ✅ 🔥 CRITICAL: Fix HTTPS behind Render proxy
-app.UseForwardedHeaders(new ForwardedHeadersOptions
+
+// 🔥 ✅ CRITICAL FIX FOR RENDER (DO NOT MISS)
+var forwardedOptions = new ForwardedHeadersOptions
 {
-    ForwardedHeaders =
-        ForwardedHeaders.XForwardedFor |
-        ForwardedHeaders.XForwardedProto
-});
+    ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto
+};
+
+// 🔥 REQUIRED so ASP.NET trusts Render proxy
+forwardedOptions.KnownNetworks.Clear();
+forwardedOptions.KnownProxies.Clear();
+
+app.UseForwardedHeaders(forwardedOptions);
+
 
 // ✅ Production config
 if (!app.Environment.IsDevelopment())
@@ -76,10 +87,10 @@ if (!app.Environment.IsDevelopment())
 
 app.UseRouting();
 
-// ✅ Apply CORS
+// ✅ Apply CORS BEFORE auth
 app.UseCors("AllowFrontend");
 
-// ✅ Auth middleware order
+// ✅ Auth middleware
 app.UseAuthentication();
 app.UseAuthorization();
 
@@ -91,6 +102,8 @@ if (app.Environment.IsDevelopment())
     app.UseSwagger();
     app.UseSwaggerUI();
 }
+
+// Run app
 //app.Run();
 
 //// ✅ Bind to Render port
