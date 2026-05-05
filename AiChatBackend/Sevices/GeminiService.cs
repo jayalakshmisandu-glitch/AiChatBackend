@@ -1,10 +1,6 @@
-﻿using System;
-using System.Net;
-using System.Net.Http;
+﻿using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
-using System.Threading.Tasks;
-using Microsoft.Extensions.Configuration;
 
 namespace AiChatBackend.Sevices
 {
@@ -12,81 +8,118 @@ namespace AiChatBackend.Sevices
     {
         private readonly HttpClient _httpClient;
         private readonly string _apiKey;
-        private readonly Random _random;
-        private readonly string[] _fallbackModels;
+        private readonly string _model;
+        private const string GroqApiUrl = "https://api.groq.com/openai/v1/chat/completions";
 
         public GeminiService(IConfiguration config)
         {
             _httpClient = new HttpClient();
-            _apiKey = config["Gemini:ApiKey"] ?? throw new Exception("Gemini API key missing");
-            _random = new Random();
 
-            _fallbackModels = new[]
-            {
-                "gemini-2.5-flash",
-                "gemini-2.5-pro",
-                "gemini-2.0-flash"
-            };
+            // Read Groq API key from configuration
+            _apiKey = config["Groq:ApiKey"]
+                ?? throw new Exception("Groq API key is missing. Please add it to appsettings.json");
+
+            // Default model - fast and free tier
+            _model = config["Groq:Model"] ?? "llama-3.1-8b-instant";
+
+            // Set authorization header for Groq
+            _httpClient.DefaultRequestHeaders.Authorization =
+                new AuthenticationHeaderValue("Bearer", _apiKey);
         }
 
         public async Task<string> GetResponseAsync(string message)
         {
             if (string.IsNullOrWhiteSpace(message))
-                return "Please provide a message.";
+                return "Please enter a message.";
 
-            foreach (var model in _fallbackModels)
+            int maxRetries = 3;
+            int retryDelayMs = 1000;
+
+            for (int attempt = 0; attempt < maxRetries; attempt++)
             {
-                var result = await TryCallModelAsync(message, model);
-
-                if (!result.Contains("Error"))
-                    return result;
-            }
-
-            return "AI service unavailable. Try again later.";
-        }
-
-        private async Task<string> TryCallModelAsync(string message, string model)
-        {
-            try
-            {
-                var url = $"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={_apiKey}";
-
-                var body = new
+                try
                 {
-                    contents = new[]
+                    // Prepare request body in OpenAI-compatible format
+                    var requestBody = new
                     {
-                        new
+                        model = _model,
+                        messages = new[]
                         {
-                            parts = new[]
+                            new
                             {
-                                new { text = message }
+                                role = "user",
+                                content = message
                             }
+                        },
+                        max_tokens = 150,
+                        temperature = 0.7
+                    };
+
+                    var json = JsonSerializer.Serialize(requestBody);
+                    var content = new StringContent(json, Encoding.UTF8, "application/json");
+
+                    // Send request to Groq API
+                    var response = await _httpClient.PostAsync(GroqApiUrl, content);
+                    var result = await response.Content.ReadAsStringAsync();
+
+                    // Check for rate limiting (429)
+                    if ((int)response.StatusCode == 429)
+                    {
+                        Console.WriteLine($"Rate limited by Groq. Attempt {attempt + 1} of {maxRetries}");
+
+                        if (attempt < maxRetries - 1)
+                        {
+                            // Exponential backoff: 1s, 2s, 4s
+                            int delay = retryDelayMs * (int)Math.Pow(2, attempt);
+                            await Task.Delay(delay);
+                            continue;
                         }
+                        return "AI service is currently rate limited. Please try again in a moment.";
                     }
-                };
 
-                var json = JsonSerializer.Serialize(body);
-                var content = new StringContent(json, Encoding.UTF8, "application/json");
+                    // Check for other HTTP errors
+                    if (!response.IsSuccessStatusCode)
+                    {
+                        Console.WriteLine($"Groq API error: {response.StatusCode} - {result}");
+                        return $"AI service error: {response.StatusCode}";
+                    }
 
-                var response = await _httpClient.PostAsync(url, content);
-                var result = await response.Content.ReadAsStringAsync();
+                    // Parse the response
+                    using var doc = JsonDocument.Parse(result);
 
-                if (!response.IsSuccessStatusCode)
-                    return $"Error: {response.StatusCode}";
+                    // Extract the assistant's reply from OpenAI-compatible response format
+                    var assistantMessage = doc.RootElement
+                        .GetProperty("choices")[0]
+                        .GetProperty("message")
+                        .GetProperty("content")
+                        .GetString();
 
-                using var doc = JsonDocument.Parse(result);
-
-                return doc.RootElement
-                    .GetProperty("candidates")[0]
-                    .GetProperty("content")
-                    .GetProperty("parts")[0]
-                    .GetProperty("text")
-                    .GetString() ?? "No response";
+                    return assistantMessage ?? "Sorry, I couldn't generate a response.";
+                }
+                catch (HttpRequestException ex) when (ex.Message.Contains("429"))
+                {
+                    Console.WriteLine($"Rate limit exception. Attempt {attempt + 1}");
+                    if (attempt < maxRetries - 1)
+                    {
+                        int delay = retryDelayMs * (int)Math.Pow(2, attempt);
+                        await Task.Delay(delay);
+                        continue;
+                    }
+                    return "AI service is busy. Please try again.";
+                }
+                catch (JsonException ex)
+                {
+                    Console.WriteLine($"JSON parsing error: {ex.Message}");
+                    return "Error processing AI response.";
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Unexpected error: {ex.Message}");
+                    return $"Error: {ex.Message}";
+                }
             }
-            catch (Exception ex)
-            {
-                return $"Error: {ex.Message}";
-            }
+
+            return "AI service is temporarily unavailable. Please try again later.";
         }
     }
 }

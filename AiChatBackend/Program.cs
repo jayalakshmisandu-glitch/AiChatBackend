@@ -21,6 +21,7 @@ builder.Services.AddCors(options =>
     options.AddPolicy("AllowFrontend", policy =>
     {
         policy.WithOrigins(
+           
             "https://ai-chat-frontend-mocha.vercel.app",
             "https://ai-chat-frontend-git-main-jayalakshmisandu-glitchs-projects.vercel.app"
         )
@@ -90,7 +91,8 @@ if (app.Environment.IsDevelopment())
     app.UseSwagger();
     app.UseSwaggerUI();
 }
+//app.Run();
 
-// ✅ Bind to Render port
+//// ✅ Bind to Render port
 var port = Environment.GetEnvironmentVariable("PORT") ?? "8080";
 app.Run($"http://0.0.0.0:{port}");
