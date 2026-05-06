@@ -1,6 +1,8 @@
 using AiChatBackend.DAL;
 using AiChatBackend.Sevices;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.HttpOverrides;
+using System.IO;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -20,14 +22,18 @@ builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowFrontend", policy =>
     {
-        policy.WithOrigins(
+        policy.WithOrigins(new[] {
             "https://ai-chat-frontend-mocha.vercel.app"
+            
+        }
         )
         .AllowAnyHeader()
         .AllowAnyMethod()
         .AllowCredentials();
     });
 });
+builder.Services.AddDataProtection()
+    .PersistKeysToFileSystem(new DirectoryInfo("/tmp/keys"));
 
 // ✅ Authentication (cookie)
 builder.Services.AddAuthentication("cookie")
@@ -39,7 +45,7 @@ builder.Services.AddAuthentication("cookie")
         // 🔥 REQUIRED for cross-site cookies
         options.Cookie.SameSite = SameSiteMode.None;
         options.Cookie.SecurePolicy = CookieSecurePolicy.Always;
-        options.Cookie.IsEssential = true; // ✅ IMPORTANT
+        options.Cookie.IsEssential = true; 
 
         options.LoginPath = "/api/auth/login";
 
@@ -82,8 +88,7 @@ if (!app.Environment.IsDevelopment())
     app.UseHsts();
 }
 
-// ❌ Do NOT enable this on Render
-// app.UseHttpsRedirection();
+
 
 app.UseRouting();
 
