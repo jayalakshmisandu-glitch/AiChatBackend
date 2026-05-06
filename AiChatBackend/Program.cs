@@ -32,8 +32,7 @@ builder.Services.AddCors(options =>
         .AllowCredentials();
     });
 });
-builder.Services.AddDataProtection()
-    .PersistKeysToFileSystem(new DirectoryInfo("/tmp/keys"));
+
 
 // ✅ Authentication (cookie)
 builder.Services.AddAuthentication("cookie")
@@ -88,7 +87,7 @@ if (!app.Environment.IsDevelopment())
     app.UseHsts();
 }
 
-
+app.UseHttpsRedirection();
 
 app.UseRouting();
 
